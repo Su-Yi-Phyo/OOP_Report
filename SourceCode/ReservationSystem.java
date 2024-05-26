@@ -18,8 +18,7 @@ public class ReservationSystem {
     public ArrayList<Accommodation> loadAccommodations(String accPath, String roomPath, String roomOfAccPath) {
 
         ArrayList<Accommodation> accomodationList = new ArrayList<>();
-        Map<Integer, Accommodation> accomodationMap = new HashMap<>();
-        Map<Integer, Room> roomMap = new HashMap<>();
+        ArrayList<Room> roomList = new ArrayList<>();
 
         String line;
 
@@ -78,14 +77,13 @@ public class ReservationSystem {
                         throw new IllegalArgumentException("Unexpected lengths in csv file: " + accParts.length);
                 }
 
-                // Ensure the room list is initialized
+                //  the room list being initialized
                 if (acc instanceof CommonAccommodation) {
                     ((CommonAccommodation) acc).setRoomList(new ArrayList<>());
                 }
 
                 if (acc != null) {
                     accomodationList.add(acc);
-                    accomodationMap.put(accomodationID, acc);
                 }
             }
 
@@ -109,7 +107,8 @@ public class ReservationSystem {
                         Double.parseDouble(roomParts[6]),
                         Double.parseDouble(roomParts[7]));
 
-                roomMap.put(ro.getRoomId(), ro);
+                roomList.add(ro);
+
             }
 
             roomReader.close();
@@ -129,16 +128,32 @@ public class ReservationSystem {
                 int accomoId = Integer.parseInt(roomOfAccParts[0]);
                 int roomID = Integer.parseInt(roomOfAccParts[1]);
 
-                // retrieve the room and accomodation objects from the map
-                Accommodation accommodation = accomodationMap.get(accomoId);
-                Room room = roomMap.get(roomID);
+                Accommodation accommodation = null;
+                Room room = null;
 
+                // acc by Id
+                for (Accommodation accomo : accomodationList) {
+                    if (accomo.getAccomodationID() == accomoId) {
+                        accommodation = accomo;
+                    }
+                }
+
+                // room by id
+                for (Room rom : roomList) {
+                    if (rom.getRoomId() == roomID) {
+                        room = rom;
+                    }
+                }
+
+                // common accomo
                 if (accommodation != null && room != null) {
                     if (accommodation instanceof CommonAccommodation) {
                         ((CommonAccommodation) accommodation).getRoomList().add(room);
                     }
                 }
+
             }
+
             roomOfAccReader.close();
         } catch (IOException e) {
             System.out.println("ALERT: An error occured in room_in_acc.csv file reading!!!!");
@@ -398,54 +413,87 @@ public class ReservationSystem {
     // Requirement 5
     public double performReservation(String reservationPath, Accommodation acc, Room room, Date checkin, Date checkout)
             throws Exception {
-
         double totalFee = 0.0;
         boolean roomBooked = false;
+        int maxReservationID = 0;
+
+        ArrayList<Reservation> reservations = new ArrayList<>();
 
         // read reservation5.csv file
+        String line;
+        Reservation reserve = null;
+
         try {
             BufferedReader reservationReader = new BufferedReader(new FileReader(reservationPath));
-            String line;
 
             while ((line = reservationReader.readLine()) != null) {
                 String[] reserveParts = line.split(",");
-                int reservationAccomoID = Integer.parseInt(reserveParts[1]);
-                long timecheckIn, timecheckOut;
+                int reservationId = Integer.parseInt(reserveParts[0]);
+                int reserveAccomoId = Integer.parseInt(reserveParts[1]);
 
-                // luxury accomo??
-                if (acc instanceof LuxuryAccommodation) {
-                    if (reservationAccomoID == acc.getAccomodationID()) {
-                        timecheckIn = Long.parseLong(reserveParts[2]);
-                        timecheckOut = Long.parseLong(reserveParts[3]);
+                long chekingIn, checkingOut;
+                Date chekingInTime, chekingOutTime;
+                int roomID;
 
-                        // room availability check
-                        if ((checkin.getTime() < timecheckOut) && (checkout.getTime() > timecheckIn)) {
-                            roomBooked = true;
-                            break;
-                        }
-                    }
+                switch (reserveParts.length) {
+                    case 4:
+                        chekingIn = Long.parseLong(reserveParts[2]);
+                        checkingOut = Long.parseLong(reserveParts[3]);
+                        chekingInTime = new Date(chekingIn);
+                        chekingOutTime = new Date(checkingOut);
+
+                        reserve = new Reservation(reservationId, reserveAccomoId, -1, chekingInTime, chekingOutTime);
+                        break;
+
+                    case 5:
+                        roomID = Integer.parseInt(reserveParts[2]);
+                        chekingIn = Long.parseLong(reserveParts[3]);
+                        checkingOut = Long.parseLong(reserveParts[4]);
+                        chekingInTime = new Date(chekingIn);
+                        chekingOutTime = new Date(checkingOut);
+
+                        reserve = new Reservation(reservationId, reserveAccomoId, roomID, chekingInTime,
+                                chekingOutTime);
+                        break;
+
+                    default:
+                        throw new IllegalArgumentException(
+                                "Unexpected lengths in csv file:  " + reserveParts.length);
                 }
 
-                // common accomod??
-                else if (acc instanceof CommonAccommodation) {
-                    int roomID = Integer.parseInt(reserveParts[2]);
-                    if (reservationAccomoID == acc.getAccomodationID() && roomID == room.getRoomId()) {
-                        timecheckIn = Long.parseLong(reserveParts[3]);
-                        timecheckOut = Long.parseLong(reserveParts[4]);
-
-                        // room availability check
-                        if ((checkin.getTime() < timecheckOut) && (checkout.getTime() > timecheckIn)) {
-                            roomBooked = true;
-                            break;
-                        }
-                    }
-                }
+                // current max id
+                maxReservationID = Math.max(maxReservationID, reservationId);
+                reservations.add(reserve);
             }
-            reservationReader.close();
 
+            reservationReader.close();
         } catch (IOException e) {
             System.out.println("ALERT: An error occured in reservation5.csv file reading!!!");
             e.printStackTrace();
+        }
+
+        // checking room availability
+        for (Reservation rese : reservations) {
+            // luxury??
+            if (acc instanceof LuxuryAccommodation) {
+                if (rese.getAccId() == acc.getAccomodationID()) {
+                    if (checkin.before(rese.getCheckout()) && checkout.after(rese.getCheckin())) {
+                        roomBooked = true;
+                        break;
+
+                    }
+                }
+            }
+
+            // common
+            else if (acc instanceof CommonAccommodation) {
+                if (rese.getAccId() == acc.getAccomodationID()) {
+                    if (checkin.before(rese.getCheckout()) && checkout.after(rese.getCheckin())) {
+                        roomBooked = true;
+                        break;
+                    }
+                }
+            }
         }
 
         if (roomBooked) {
@@ -457,14 +505,41 @@ public class ReservationSystem {
             if (diffInDays < 1)
                 diffInDays = 1;
 
-            // if luxury, use fee of luxury accomos
+            // if luxury, use fee of luxury accomos (already included tax 8%)
             if (acc instanceof LuxuryAccommodation) {
-                totalFee = ((LuxuryAccommodation) acc).getFeePerNight() * diffInDays;
+                totalFee = (((LuxuryAccommodation) acc).getFeePerNight() * diffInDays);
             } else {
-                totalFee = room.getFeePerNight() * diffInDays; // use fee of room
+                totalFee = (room.getFeePerNight() * diffInDays); // use fee of room
             }
-            // add tax 8%
-            totalFee += totalFee * 0.08;
+            totalFee += totalFee * 0.08;// tax
+
+        }
+
+        // appending new reservation
+        int newReserveId = maxReservationID + 1;
+        Reservation newReservation = new Reservation(newReserveId, acc.getAccomodationID(), room.getRoomId(), checkin,
+                checkout);
+        reservations.add(newReservation);
+
+        // write file
+        try {
+            BufferedWriter reserveWriter = new BufferedWriter(new FileWriter(reservationPath));
+            for (Reservation res : reservations) {
+                if (res.getRoomId() == -1) {
+                    reserveWriter.write(res.getReservationId() + "," + res.getAccId() + ","
+                            + res.getCheckin().getTime() + "," + res.getCheckout().getTime());
+                } else {
+                    reserveWriter.write(res.getReservationId() + "," + res.getAccId() + "," + res.getRoomId() + "," +
+                            +res.getCheckin().getTime() + "," + res.getCheckout().getTime());
+                }
+
+                reserveWriter.newLine();
+            }
+
+            reserveWriter.close();
+        } catch (IOException e) {
+            System.out.println("ALERT: An error occurred in writing to reservation_5.csv file!!!");
+            e.printStackTrace();
         }
 
         return totalFee;
