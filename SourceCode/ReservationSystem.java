@@ -77,7 +77,7 @@ public class ReservationSystem {
                         throw new IllegalArgumentException("Unexpected lengths in csv file: " + accParts.length);
                 }
 
-                //  the room list being initialized
+                // Ensure the room list is initialized
                 if (acc instanceof CommonAccommodation) {
                     ((CommonAccommodation) acc).setRoomList(new ArrayList<>());
                 }
